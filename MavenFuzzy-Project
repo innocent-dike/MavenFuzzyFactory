@@ -1,0 +1,208 @@
+1. Finding the overall session and order volume trended by quarter.
+
+SELECT 
+	YEAR(ws.created_at) AS yr,
+	QUARTER(ws.created_at) AS qtr,
+    COUNT(DISTINCT ws.website_session_id) AS sessions,
+    COUNT(DISTINCT o.order_id) AS orders
+FROM 
+	website_sessions ws
+	LEFT JOIN orders o
+	USING(website_session_id) 
+-- WHERE ws.created_at BETWEEN '2012-03-01' AND '2014-01-)
+GROUP BY 1,2
+ORDER BY 1,2;
+RESULTS:
+yr  qtr sessions orders
+2012	1	1859	59
+2012	2	11435	347
+2012	3	16865	682
+2012	4	32274	1497
+2013	1	19829	1273
+2013	2	24733	1714
+2013	3	27625	1844
+2013	4	40541	2610
+2014	1	46738	3073
+2014	2	53084	3837
+2014	3	57124	4038
+2014	4	76409	5914
+2015	1	64355	5425
+
+
+
+
+2. Find the quarterly figures since the lunch of a new product, for sessions-to-order conversion rate, revenue per order and revenue per session.
+SELECT 
+	YEAR(ws.created_at) AS yr,
+	QUARTER(ws.created_at) AS qtr,
+	ROUND(COUNT(DISTINCT o.order_id)/COUNT(DISTINCT ws.website_session_id),2)AS session_to_order_cvrt,
+    ROUND(SUM(price_usd)/COUNT(DISTINCT o.order_id),2) AS revenue_per_order,
+	ROUND(SUM(price_usd)/COUNT(DISTINCT ws.website_session_id),2) AS revenue_per_session
+FROM 
+	website_sessions ws
+	LEFT JOIN orders o
+	USING(website_session_id) 
+GROUP BY 1,2
+ORDER BY 1,2;
+RESULTS:
+yr   qtr 
+2012	1	0.03	49.99	1.59
+2012	2	0.03	49.99	1.52
+2012	3	0.04	49.99	2.02
+2012	4	0.05	49.99	2.32
+2013	1	0.06	52.14	3.35
+2013	2	0.07	51.53	3.57
+2013	3	0.07	51.74	3.45
+2013	4	0.06	54.70	3.52
+2014	1	0.07	62.15	4.09
+2014	2	0.07	64.36	4.65
+2014	3	0.07	64.49	4.56
+2014	4	0.08	63.81	4.94
+2015	1	0.08	62.80	5.29
+
+
+3. Quarterly view of orders from Gsearch nonbrand, Bsearch nonbrand, brand search overall, organic search and direct type-in.
+
+SELECT
+	YEAR(ws.created_at) AS yr,
+    QUARTER(ws.created_at) AS qtr,
+    COUNT(DISTINCT CASE WHEN utm_source = 'gsearch' AND utm_campaign = 'nonbrand' THEN o.order_id ELSE NULL END) AS gsearch_nonbrand_orders,
+    COUNT(DISTINCT CASE WHEN utm_source = 'bsearch' AND utm_campaign = 'nonbrand' THEN o.order_id ELSE NULL END) AS bsearch_nonbrand_orders,
+    COUNT(DISTINCT CASE WHEN utm_campaign = 'brand' THEN o.order_id ELSE NULL END) AS brand_search_orders,
+	COUNT(DISTINCT CASE WHEN utm_source IS NULL AND http_referer IS NULL THEN o.order_id ELSE NULL END) AS direct_type_in_orders,
+    COUNT(DISTINCT CASE WHEN utm_source IS NULL AND http_referer IS NOT NULL THEN o.order_id ELSE NULL END) AS organic_search_orders
+    		
+FROM 
+	website_sessions ws
+	LEFT JOIN orders o
+	USING(website_session_id) 
+GROUP BY 1,2
+ORDER BY 1,2;
+RESULTS:
+yr   qtr 
+2012	1	59	0	0	0	0
+2012	2	292	0	19	21	15
+2012	3	479	82	49	32	40
+2012	4	916	311	87	89	94
+2013	1	765	183	109	91	125
+2013	2	1111	237	113	119	134
+2013	3	1135	245	154	143	167
+2013	4	1654	291	247	196	222
+2014	1	1668	344	355	312	339
+2014	2	2203	424	409	366	435
+2014	3	2263	434	430	402	446
+2014	4	3249	686	618	532	604
+2015	1	3028	581	622	553	641
+
+
+
+
+4. Analysing repeat channel behaviour by comparing new vs repeat sessions by channel.
+SELECT 
+	 CASE 
+ 		WHEN utm_source IS NULL AND http_referer IN ('https://www.gsearch.com','https://www.bsearch.com')THEN 'organic_search'
+         WHEN utm_campaign = 'nonbrand' THEN 'paid_nonbrand'
+         WHEN utm_campaign = 'brand' THEN 'paid_brand'
+ 		WHEN utm_source IS NULL AND http_referer IS NULL THEN 'direct_type_in'
+         WHEN utm_source = 'socialbook' THEN 'paid_socialbook'
+     END AS channel_group,
+    COUNT(DISTINCT CASE WHEN is_repeat_session = 0 THEN website_session_id ELSE NULL END) AS new_session,
+    COUNT(DISTINCT CASE WHEN is_repeat_session = 1 THEN website_session_id  ELSE NULL END) AS repeat_orders
+FROM
+	website_sessions
+    WHERE website_sessions.created_at < '2014-11-01'
+    AND created_at > '2014-01-01'
+    GROUP BY 1
+    ORDER BY 3 DESC;
+    RESULTS:
+channel_group new_session repeat_orders   
+organic_search	7034	11357
+paid_brand	6345	10889
+direct_type_in	6485	10418
+paid_nonbrand	118528	0
+paid_socialbook	7504	0
+
+
+
+5. Pull monthly trending for revenue and margin by product, along with total sales and revenue.
+SELECT 
+	YEAR(created_at) AS yr,
+    MONTH(created_at) AS mo,
+    product_id,
+    SUM(CASE WHEN product_id = 1 THEN price_usd ELSE 0 END) AS mrfuzzy_revenue,
+    SUM(CASE WHEN product_id = 1 THEN  price_usd - cogs_usd ELSE 0 END) AS mrfuzzy_margin,
+	SUM(CASE WHEN product_id = 2 THEN price_usd ELSE 0 END) AS lovebear_revenue,
+    SUM(CASE WHEN product_id = 2 THEN  price_usd - cogs_usd ELSE 0 END) AS lovebear_margin,
+	SUM(CASE WHEN product_id = 3 THEN  price_usd ELSE 0 END) AS birthdaybear_revenue,
+	SUM(CASE WHEN product_id = 3 THEN  price_usd - cogs_usd ELSE 0 END) AS birthdaybear_margin,
+    SUM(CASE WHEN product_id = 4 THEN  price_usd ELSE 0 END) AS minibear_revenue,
+	SUM(CASE WHEN product_id = 4 THEN  price_usd - cogs_usd ELSE 0 END) AS minibear_margin,
+    SUM(price_usd) AS total_revenue,
+	SUM(price_usd - cogs_usd) AS total_margin
+FROM
+	order_items 
+GROUP BY 1,2
+ORDER BY 1,2;
+RESULTS: This result was limited to 15 due to the volume of results.
+yr   Mo product_id 
+2012	3	1	2949.41	1799.50	0.00	0.00	0.00	0.00	0.00	0.00	2949.41	1799.50
+2012	4	1	4999.00	3050.00	0.00	0.00	0.00	0.00	0.00	0.00	4999.00	3050.00
+2012	5	1	5348.93	3263.50	0.00	0.00	0.00	0.00	0.00	0.00	5348.93	3263.50
+2012	6	1	6998.60	4270.00	0.00	0.00	0.00	0.00	0.00	0.00	6998.60	4270.00
+2012	7	1	8448.31	5154.50	0.00	0.00	0.00	0.00	0.00	0.00	8448.31	5154.50
+2012	8	1	11397.72	6954.00	0.00	0.00	0.00	0.00	0.00	0.00	11397.72	6954.00
+2012	9	1	14247.15	8692.50	0.00	0.00	0.00	0.00	0.00	0.00	14247.15	8692.50
+2012	10	1	18346.33	11193.50	0.00	0.00	0.00	0.00	0.00	0.00	18346.33	11193.50
+2012	11	1	31043.79	18940.50	0.00	0.00	0.00	0.00	0.00	0.00	31043.79	18940.50
+2012	12	1	25444.91	15524.50	0.00	0.00	0.00	0.00	0.00	0.00	25444.91	15524.50
+2013	1	1	17096.58	10431.00	2819.53	1762.50	0.00	0.00	0.00	0.00	19916.11	12193.50
+2013	2	1	16646.67	10156.50	9658.39	6037.50	0.00	0.00	0.00	0.00	26305.06	16194.00
+2013	3	1	16196.76	9882.00	3959.34	2475.00	0.00	0.00	0.00	0.00	20156.10	12357.00
+2013	4	1	22745.45	13877.50	5579.07	3487.50	0.00	0.00	0.00	0.00	28324.52	17365.00
+2013	5	1	24645.07	15036.50	4919.18	3075.00	0.00	0.00	0.00	0.00	29564.25	18111.50
+
+
+
+6. 4th product was made available as a primary product on December 5th. Pull sales data since then and show how well each product cross-sells from one another.
+CREATE TEMPORARY TABLE primary_products       
+SELECT 
+	order_id,
+    primary_product_id,
+    created_at AS ordered_created_at
+FROM orders
+WHERE created_at > '2014-12-05'; -- when the 4th product was added
+        
+SELECT
+	primary_product_id,
+    COUNT(DISTINCT order_id) AS total_orders,
+    COUNT(DISTINCT CASE WHEN cross_sell_product_id = 1 THEN order_id ELSE NULL END) AS cross_sold_p1,
+    COUNT(DISTINCT CASE WHEN cross_sell_product_id = 2 THEN order_id ELSE NULL END) AS cross_sold_p2,
+    COUNT(DISTINCT CASE WHEN cross_sell_product_id = 3 THEN order_id ELSE NULL END) AS cross_sold_p3,
+    COUNT(DISTINCT CASE WHEN cross_sell_product_id = 4 THEN order_id ELSE NULL END) AS cross_sold_p4,
+    
+	COUNT(DISTINCT CASE WHEN cross_sell_product_id = 1 THEN order_id ELSE NULL END)
+		/COUNT(DISTINCT order_id) AS cross_sell_p1_rate,
+	COUNT(DISTINCT CASE WHEN cross_sell_product_id = 2 THEN order_id ELSE NULL END)
+		/COUNT(DISTINCT order_id) AS cross_sell_p2_rate,
+	COUNT(DISTINCT CASE WHEN cross_sell_product_id = 3 THEN order_id ELSE NULL END)
+		/COUNT(DISTINCT order_id) AS cross_sell_p3_rate,
+	COUNT(DISTINCT CASE WHEN cross_sell_product_id = 4 THEN order_id ELSE NULL END)
+		/COUNT(DISTINCT order_id) AS cross_sell_p4_rate
+FROM
+(
+SELECT 
+	primary_products.*,
+    order_items.product_id AS cross_sell_product_id
+FROM primary_products
+	LEFT JOIN order_items
+    ON order_items.order_id = primary_products.order_id
+    AND order_items.is_primary_item = 0-- bringing only cross sell
+    
+) AS primary_w_cross_sell
+GROUP BY 1;
+RESULTS:
+
+1	4479	0	241	553	936	0.0000	0.0538	0.1235	0.2090
+2	1280	25	0	40	262	0.0195	0.0000	0.0313	0.2047
+3	930	84	40	0	208	0.0903	0.0430	0.0000	0.2237
+4	581	16	9	22	0	0.0275	0.0155	0.0379	0.0000
